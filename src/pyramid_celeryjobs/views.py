@@ -68,7 +68,7 @@ def jobs_list(request):
     renderer="json",
     cors=True,
     openapi=True,
-    permission=VIEW,
+    permission=None,
 )
 def options_jobs_list(request):
     res = Response('OK', status=200)
