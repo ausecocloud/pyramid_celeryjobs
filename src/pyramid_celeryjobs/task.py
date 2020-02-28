@@ -33,26 +33,40 @@ def submit_job(request, task):
         # transaction commit hook to submit job to queue
         if not success:
             return
+
         # TODO: check success
         # TODO: try catch task submission in case message queue is down
         # TODO: potential problem when executing eagerly with transactions
         #       taks begins and commits a transaction
         #       and here we are in the middle of a transaction
+
+        # Run task
         result = task.delay()
-        log.info("Job {} submitted.".format(job_id))
+
         # we need to start a new transaction
         request.tm.begin()
         # add job to session
         request.dbsession.add(job)
         request.dbsession.refresh(job)  # make sure we have the latest state
         # update job.task_ids
-        job.state = "SUBMITTED"
+        # NOTE: Currently unable to verify behaviour of job state
+        job.state = "PENDING"
         job.task_ids = chain_task_ids(result)
         # TODO: try catch commit
         request.tm.commit()
-        # we can't use job.job_id here, because transaction commit
-        # closes the session (maybe expunge job from session?)
-        log.info("Job {} state submitted.".format(job_id))
+        log.info("Job {} submitted.".format(job_id))
+
+        # Wait for completion, then update state
+        result.wait()
+        # NOTE: Currently unable to verify behaviour of job state
+        job_state = "SUCCESS"
+
+        request.tm.begin()
+        request.dbsession.add(job)
+        request.dbsession.refresh(job)
+        job.state = job_state
+        request.tm.commit()
+        log.info("Job {} has new state {}.".format(job_id, job_state))
 
     request.dbsession.add(job)
     request.tm.get().addAfterCommitHook(submit_job_hook)
